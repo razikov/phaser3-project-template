@@ -12,4 +12,3 @@ node_modules/
 # Build
 dist/
 /npm-debug.log
-/example/phaser3-tutorial-src/

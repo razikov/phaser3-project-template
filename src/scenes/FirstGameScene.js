@@ -3,93 +3,90 @@ import ground from './../assets/platform.png';
 import star from './../assets/star.png';
 import bomb from './../assets/bomb.png';
 import dudeSprite from './../assets/dude.png'
+import ScoreLabel from '../ui/ScoreLabel'
+import BombSpawner from "./BombSpawner";
 
-class FirstGameScene extends Phaser.Scene
+const GROUND_KEY = 'ground'
+const SKY_KEY = 'sky'
+const STAR_KEY = 'star'
+const BOMB_KEY = 'bomb'
+const DUDE_KEY = 'dude'
+
+export default class FirstGameScene extends Phaser.Scene
 {
-    constructor() {
+    constructor()
+    {
         super('first-game-scene');
-        this.platforms = null;
-        this.player = null;
-        this.stars = null;
-        this.score = 0;
-        this.scoreText = null;
-        this.bombs = null;
+        this.platforms = undefined;
+        this.player = undefined;
+        this.stars = undefined;
+        this.cursors = undefined;
+        this.scoreLabel = undefined;
+        this.bombSpawner = undefined;
+        this.gameOver = false;
     }
 
-    preload() {
-        this.load.image('sky', sky);
-        this.load.image('ground', ground);
-        this.load.image('star', star);
-        this.load.image('bomb', bomb);
+    preload()
+    {
+        this.load.image(SKY_KEY, sky);
+        this.load.image(GROUND_KEY, ground);
+        this.load.image(STAR_KEY, star);
+        this.load.image(BOMB_KEY, bomb);
         this.load.spritesheet(
-            'dude',
+            DUDE_KEY,
             dudeSprite,
             { frameWidth: 32, frameHeight: 48 }
         );
     }
 
-    create() {
+    create()
+    {
         // порядок отрисовки зависит от порядка объявления. Первые снизу
         // координаты размещения изображений по центрам. См image.setOrigin()
-        this.add.image(400, 300, 'sky');
+        this.add.image(400, 300, SKY_KEY);
 
-        this.platforms = this.physics.add.staticGroup();
-        // у статических объектов обязательно вызывать обновление после изменений
-        this.platforms.create(400, 568, 'ground').setScale(2).refreshBody();
-        this.platforms.create(600, 400, 'ground');
-        this.platforms.create(50, 250, 'ground');
-        this.platforms.create(750, 220, 'ground');
+        this.platforms = this.createPlatforms();
+        this.player = this.createPlayer();
+        this.stars = this.createStars();
+        this.scoreLabel = this.createScoreLabel(16, 16, 0);
 
-        this.player = this.physics.add.sprite(100, 450, 'dude');
-        this.player.setBounce(0.2);
-        this.player.setCollideWorldBounds(true);
-        // this.anims - animation manager глобальный. Созданные анимации доступны всем объектам. Они имеют общие данные, но собственные временные шкалы
-        this.anims.create({
-            key: 'left',
-            frames: this.anims.generateFrameNumbers('dude', { start: 0, end: 3 }),
-            frameRate: 10,
-            repeat: -1
-        });
-        this.anims.create({
-            key: 'turn',
-            frames: [ { key: 'dude', frame: 4 } ],
-            frameRate: 20
-        });
-        this.anims.create({
-            key: 'right',
-            frames: this.anims.generateFrameNumbers('dude', { start: 5, end: 8 }),
-            frameRate: 10,
-            repeat: -1
-        });
+        this.bombSpawner = new BombSpawner(this, BOMB_KEY);
+        const bombGroup = this.bombSpawner.group;
+
         this.physics.add.collider(this.player, this.platforms);
-
-        this.stars = this.physics.add.group({
-            key: 'star',
-            repeat: 11,
-            setXY: { x: 12, y: 0, stepX: 70 }
-        });
-        this.stars.children.iterate(function (child) {
-            child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
-        });
         this.physics.add.collider(this.stars, this.platforms);
+        this.physics.add.collider(bombGroup, this.platforms);
+        this.physics.add.collider(this.player, bombGroup, this.hitBomb, null, this);
         this.physics.add.overlap(this.player, this.stars, this.collectStar, null, this);
 
-        this.scoreText = this.add.text(16, 16, 'score: 0', { fontSize: '32px', fill: '#000' });
-
-        this.bombs = this.physics.add.group();
-        this.physics.add.collider(this.bombs, this.platforms);
-        this.physics.add.collider(this.player, this.bombs, this.hitBomb, null, this);
+        this.cursors = this.input.keyboard.createCursorKeys();
     }
 
-    update(time, delta) {
+    createPlatforms()
+    {
+        const platforms = this.physics.add.staticGroup();
+
+        // у статических объектов обязательно вызывать обновление после изменений
+        platforms.create(400, 568, GROUND_KEY).setScale(2).refreshBody();
+        platforms.create(600, 400, GROUND_KEY);
+        platforms.create(50, 250, GROUND_KEY);
+        platforms.create(750, 220, GROUND_KEY);
+
+        return platforms;
+    }
+
+    update(time, delta)
+    {
+        if (this.gameOver) {
+            return;
+        }
+
         super.update(time, delta);
 
-        let cursors = this.input.keyboard.createCursorKeys();
-
-        if (cursors.left.isDown) {
+        if (this.cursors.left.isDown) {
             this.player.setVelocityX(-160);
             this.player.anims.play('left', true);
-        } else if (cursors.right.isDown) {
+        } else if (this.cursors.right.isDown) {
             this.player.setVelocityX(160);
             this.player.anims.play('right', true);
         } else {
@@ -97,28 +94,23 @@ class FirstGameScene extends Phaser.Scene
             this.player.anims.play('turn');
         }
 
-        if (cursors.up.isDown && this.player.body.touching.down) {
+        if (this.cursors.up.isDown && this.player.body.touching.down) {
             this.player.setVelocityY(-330);
         }
     }
 
-    collectStar(player, star) {
+    collectStar(player, star)
+    {
         star.disableBody(true, true);
 
-        this.score += 10;
-        this.scoreText.setText('Score: ' + this.score);
+        this.scoreLabel.add(10);
 
         if (this.stars.countActive(true) === 0) {
             this.stars.children.iterate(function (child) {
                 child.enableBody(true, child.x, 0, true, true);
             });
 
-            const x = (player.x < 400) ? Phaser.Math.Between(400, 800) : Phaser.Math.Between(0, 400);
-
-            const bomb = this.bombs.create(x, 16, 'bomb');
-            bomb.setBounce(1);
-            bomb.setCollideWorldBounds(true);
-            bomb.setVelocity(Phaser.Math.Between(-200, 200), 20);
+            this.bombSpawner.spawn(player.x);
         }
     }
 
@@ -126,8 +118,60 @@ class FirstGameScene extends Phaser.Scene
         this.physics.pause();
         player.setTint(0xff0000);
         player.anims.play('turn');
-        let gameOver = true;
+        this.gameOver = true;
+    }
+
+    createPlayer()
+    {
+        const player = this.physics.add.sprite(100, 450, DUDE_KEY);
+        player.setBounce(0.2);
+        player.setCollideWorldBounds(true);
+
+        // this.anims - глобальный animation manager. Созданные анимации доступны всем объектам. Они имеют общие данные, но собственные временные шкалы
+        this.anims.create({
+            key: 'left',
+            frames: this.anims.generateFrameNumbers(DUDE_KEY, { start: 0, end: 3 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        this.anims.create({
+            key: 'turn',
+            frames: [ { key: DUDE_KEY, frame: 4 } ],
+            frameRate: 20
+        });
+
+        this.anims.create({
+            key: 'right',
+            frames: this.anims.generateFrameNumbers(DUDE_KEY, { start: 5, end: 8 }),
+            frameRate: 10,
+            repeat: -1
+        });
+
+        return player;
+    }
+
+    createStars()
+    {
+        const stars = this.physics.add.group({
+            key: STAR_KEY,
+            repeat: 11,
+            setXY: { x: 12, y: 0, stepX: 70 }
+        });
+
+        stars.children.iterate(function (child) {
+            child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
+        });
+
+        return stars;
+    }
+
+    createScoreLabel(x, y, score) {
+        const style = { fontSize: '32px', fill: '#000' }
+        const label = new ScoreLabel(this, x, y, score, style);
+
+        this.add.existing(label);
+
+        return label;
     }
 }
-
-export default
